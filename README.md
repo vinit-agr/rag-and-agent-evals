@@ -1,8 +1,56 @@
 # rag-evaluation-system
 
-A TypeScript framework for evaluating RAG (Retrieval-Augmented Generation) retrieval pipelines. Supports two evaluation paradigms: **chunk-level** (did we retrieve the right chunks?) and **token-level** (did we retrieve the right character spans?).
+A TypeScript framework for evaluating RAG (Retrieval-Augmented Generation) retrieval pipelines. Includes a **core library** for programmatic use and a **Next.js frontend** for visual question generation and inspection.
 
-## Install
+Supports two evaluation paradigms: **chunk-level** (did we retrieve the right chunks?) and **token-level** (did we retrieve the right character spans?).
+
+## Getting started with the frontend
+
+The fastest way to try things out is the built-in Next.js app.
+
+### Prerequisites
+
+- Node.js >= 18
+- pnpm
+- An OpenAI API key
+
+### Setup
+
+```bash
+# 1. Install root dependencies and build the library
+pnpm install
+npm run build
+
+# 2. Install frontend dependencies
+cd frontend
+pnpm install
+
+# 3. Add your OpenAI API key
+echo "OPENAI_API_KEY=sk-your-key-here" > .env
+
+# 4. Start the dev server
+pnpm dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+### Using the frontend
+
+1. **Choose evaluation mode** — Chunk-level or Token-level
+2. **Load a corpus** — Point to a folder containing markdown files
+3. **Pick a strategy**:
+   - **Simple** — Set questions-per-document and generate
+   - **Dimension-Driven** — Enter a website URL to auto-discover user dimensions (or define manually), review/edit dimensions in the wizard, set a question budget, then generate
+4. **Watch generation** — Phase progress shows pipeline stages (filtering, summarizing, sampling), then questions stream in per document
+5. **Inspect results** — Click any question to see the source document with highlighted relevant chunks or spans
+
+Dimension configurations are saved to your browser's localStorage and persist across restarts.
+
+---
+
+## Using the library
+
+### Install
 
 ```bash
 pnpm add rag-evaluation-system
@@ -151,58 +199,80 @@ const corpus = await corpusFromFolder("./data", "**/*.txt");
 
 ## Synthetic data generation
 
-Generate evaluation datasets automatically using an LLM.
+Generate evaluation datasets automatically using an LLM. Two strategies are available:
 
-### Chunk-level
+### Simple strategy
+
+Generates N questions per document using prompt-based generation.
 
 ```typescript
 import {
-  createCorpus,
-  createDocument,
+  corpusFromFolder,
   RecursiveCharacterChunker,
-  ChunkLevelSyntheticDatasetGenerator,
+  SimpleStrategy,
+  generate,
   openAIClientAdapter,
 } from "rag-evaluation-system";
 import OpenAI from "openai";
 
 const llm = openAIClientAdapter(new OpenAI());
-const corpus = createCorpus([createDocument({ id: "doc.md", content: "..." })]);
-const chunker = new RecursiveCharacterChunker();
+const corpus = await corpusFromFolder("./docs");
 
-const generator = new ChunkLevelSyntheticDatasetGenerator({
-  llmClient: llm,
+const groundTruth = await generate({
+  strategy: new SimpleStrategy({ queriesPerDoc: 5 }),
+  evaluationType: "chunk-level",
   corpus,
-  chunker,
-  model: "gpt-4o",
-});
-
-const groundTruth = await generator.generate({
-  queriesPerDoc: 5,
-  uploadToLangsmith: true, // uploads to LangSmith automatically
-  datasetName: "my-eval-dataset",
+  llmClient: llm,
+  model: "gpt-4o-mini",
+  chunker: new RecursiveCharacterChunker(),
 });
 ```
 
-### Token-level
+### Dimension-driven strategy
+
+Generates diverse questions by discovering user dimensions (persona, intent, expertise, etc.), filtering unrealistic combinations, building a document-relevance matrix, and sampling across dimensions.
 
 ```typescript
 import {
-  TokenLevelSyntheticDatasetGenerator,
+  corpusFromFolder,
+  RecursiveCharacterChunker,
+  DimensionDrivenStrategy,
+  discoverDimensions,
+  generate,
   openAIClientAdapter,
 } from "rag-evaluation-system";
 import OpenAI from "openai";
 
-const generator = new TokenLevelSyntheticDatasetGenerator({
-  llmClient: openAIClientAdapter(new OpenAI()),
-  corpus,
+const llm = openAIClientAdapter(new OpenAI());
+const corpus = await corpusFromFolder("./docs");
+
+// Auto-discover dimensions from a website
+await discoverDimensions({
+  url: "https://docs.example.com",
+  llmClient: llm,
   model: "gpt-4o",
+  outputPath: "./dimensions.json",
 });
 
-const groundTruth = await generator.generate({
-  queriesPerDoc: 5,
-  uploadToLangsmith: true,
+const groundTruth = await generate({
+  strategy: new DimensionDrivenStrategy({
+    dimensionsFilePath: "./dimensions.json",
+    totalQuestions: 50,
+    onProgress: (event) => console.log(event.phase), // optional progress tracking
+  }),
+  evaluationType: "chunk-level",
+  corpus,
+  llmClient: llm,
+  model: "gpt-4o-mini",
+  chunker: new RecursiveCharacterChunker(),
 });
 ```
+
+Both strategies work with either `"chunk-level"` or `"token-level"` evaluation types.
+
+### Legacy API
+
+The older `ChunkLevelSyntheticDatasetGenerator` and `TokenLevelSyntheticDatasetGenerator` classes are still exported for backward compatibility.
 
 ## Using LangSmith for dataset management
 
