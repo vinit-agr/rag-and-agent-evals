@@ -75,6 +75,23 @@ export { ChunkLevelSyntheticDatasetGenerator } from "./synthetic-datagen/chunk-l
 export { TokenLevelSyntheticDatasetGenerator } from "./synthetic-datagen/token-level/index.js";
 export type { LLMClient } from "./synthetic-datagen/base.js";
 export { openAIClientAdapter } from "./synthetic-datagen/base.js";
+export { generate } from "./synthetic-datagen/index.js";
+export type { GenerateOptions } from "./synthetic-datagen/index.js";
+export { SimpleStrategy } from "./synthetic-datagen/strategies/simple/generator.js";
+export { DimensionDrivenStrategy } from "./synthetic-datagen/strategies/dimension-driven/generator.js";
+export { discoverDimensions } from "./synthetic-datagen/strategies/dimension-driven/discovery.js";
+export { loadDimensions } from "./synthetic-datagen/strategies/dimension-driven/dimensions.js";
+export { ChunkLevelGroundTruthAssigner } from "./synthetic-datagen/ground-truth/chunk-level.js";
+export { TokenLevelGroundTruthAssigner } from "./synthetic-datagen/ground-truth/token-level.js";
+export type {
+  QuestionStrategy,
+  GeneratedQuery,
+  StrategyContext,
+  SimpleStrategyOptions,
+  DimensionDrivenStrategyOptions,
+  Dimension,
+  DimensionCombo,
+} from "./synthetic-datagen/strategies/types.js";
 
 // LangSmith
 export {

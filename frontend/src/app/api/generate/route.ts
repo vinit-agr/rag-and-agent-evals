@@ -5,9 +5,11 @@ import {
   createDocument,
   RecursiveCharacterChunker,
   openAIClientAdapter,
-  ChunkLevelSyntheticDatasetGenerator,
-  TokenLevelSyntheticDatasetGenerator,
+  SimpleStrategy,
+  generate,
+  generateChunkId,
 } from "rag-evaluation-system";
+import type { ChunkLevelGroundTruth, TokenLevelGroundTruth } from "rag-evaluation-system";
 
 export async function POST(request: NextRequest) {
   if (!process.env.OPENAI_API_KEY) {
@@ -54,13 +56,11 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        // Dynamic import OpenAI to avoid bundling issues
         const { default: OpenAI } = await import("openai");
         const openai = new OpenAI();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const llm = openAIClientAdapter(openai as any);
 
-        // Load corpus
         const corpus = await corpusFromFolder(folderPath, "**/*.md");
         if (corpus.documents.length === 0) {
           send({ type: "error", error: "No markdown files found" });
@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
           return;
         }
 
+        const strategy = new SimpleStrategy({ queriesPerDoc: questionsPerDoc });
         let totalQuestions = 0;
 
         if (mode === "chunk") {
@@ -76,27 +77,23 @@ export async function POST(request: NextRequest) {
             chunkOverlap,
           });
 
-          // Process each document individually so we can stream per-document
+          // Process per document for streaming
           for (const doc of corpus.documents) {
             const singleCorpus = createCorpus([
               createDocument({ id: String(doc.id), content: doc.content }),
             ]);
 
-            const generator = new ChunkLevelSyntheticDatasetGenerator({
-              llmClient: llm,
+            const groundTruth = (await generate({
+              strategy,
+              evaluationType: "chunk-level",
               corpus: singleCorpus,
-              chunker,
+              llmClient: llm,
               model: "gpt-4o-mini",
-            });
-
-            const groundTruth = await generator.generate({
-              queriesPerDoc: questionsPerDoc,
+              chunker,
               uploadToLangsmith: false,
-            });
+            })) as ChunkLevelGroundTruth[];
 
-            // Build a chunk content lookup from the chunker
             const chunks = chunker.chunk(doc.content);
-            const { generateChunkId } = await import("rag-evaluation-system");
             const chunkMap = new Map<string, string>();
             for (const text of chunks) {
               chunkMap.set(String(generateChunkId(text)), text);
@@ -125,16 +122,14 @@ export async function POST(request: NextRequest) {
               createDocument({ id: String(doc.id), content: doc.content }),
             ]);
 
-            const generator = new TokenLevelSyntheticDatasetGenerator({
-              llmClient: llm,
+            const groundTruth = (await generate({
+              strategy,
+              evaluationType: "token-level",
               corpus: singleCorpus,
+              llmClient: llm,
               model: "gpt-4o-mini",
-            });
-
-            const groundTruth = await generator.generate({
-              queriesPerDoc: questionsPerDoc,
               uploadToLangsmith: false,
-            });
+            })) as TokenLevelGroundTruth[];
 
             for (const gt of groundTruth) {
               send({
